@@ -39,6 +39,10 @@ public class AuditService {
         log("USER_CREATED", true, tenantId, actorId, null, null, null, null);
     }
 
+    public void logUserDeactivated(UUID tenantId, UUID actorId, UUID targetUserId) {
+        log("USER_DEACTIVATED", true, tenantId, actorId, null, null, null, null);
+    }
+
 
     private void log(String eventType, boolean success, UUID tenantId,
             UUID actorId, String actorEmail, String failureReason,

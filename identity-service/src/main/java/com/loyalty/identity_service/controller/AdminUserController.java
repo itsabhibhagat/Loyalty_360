@@ -1,9 +1,6 @@
 package com.loyalty.identity_service.controller;
 
-import com.loyalty.identity_service.dto.ApiResponse;
-import com.loyalty.identity_service.dto.CreateAdminUserRequest;
-import com.loyalty.identity_service.dto.CreateAdminUserResponse;
-import com.loyalty.identity_service.dto.UserResponse;
+import com.loyalty.identity_service.dto.*;
 import com.loyalty.identity_service.service.AdminUserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -54,4 +51,35 @@ public class AdminUserController {
                 ApiResponse
                         .ok(adminUserService.listUsers(tenantId, status, PageRequest.of(page, Math.min(size, 100)))));
     }
+
+    /**
+     * PATCH /admin/users/{id}
+     * Updates non-null fields of the admin user.
+     */
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasAuthority('admin_user.manage')")
+    public ResponseEntity<ApiResponse<UserResponse>> updateUser(
+            @RequestHeader("X-Tenant-Id") UUID tenantId,
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateAdminUserRequest request) {
+
+        return ResponseEntity.ok(ApiResponse.ok(adminUserService.updateUser(tenantId, id, request)));
+    }
+
+    /**
+     * POST /admin/users/{id}/deactivate
+     * Soft-deactivates the user and revokes all refresh tokens.
+     */
+    @PostMapping("/{id}/deactivate")
+    @PreAuthorize("hasAuthority('admin_user.manage')")
+    public ResponseEntity<ApiResponse<Void>> deactivateUser(
+            @RequestHeader("X-Tenant-Id") UUID tenantId,
+            @RequestHeader("X-User-Id") UUID callerId,
+            @PathVariable UUID id) {
+
+        adminUserService.deactivateUser(tenantId, callerId, id);
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
+
 }

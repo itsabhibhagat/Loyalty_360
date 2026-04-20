@@ -2,6 +2,7 @@ package com.loyalty.identity_service.service;
 
 import com.loyalty.identity_service.dto.CreateAdminUserRequest;
 import com.loyalty.identity_service.dto.CreateAdminUserResponse;
+import com.loyalty.identity_service.dto.UpdateAdminUserRequest;
 import com.loyalty.identity_service.dto.UserResponse;
 import com.loyalty.identity_service.entity.*;
 import com.loyalty.identity_service.exception.ConflictException;
@@ -35,6 +36,7 @@ public class AdminUserService {
     private final RoleRepository roleRepository;
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenService refreshTokenService;
 
     private static final String TEMP_PASS_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -150,27 +152,60 @@ public class AdminUserService {
         return response;
     }
 
-    private UserResponse toUserResponse(AdminUser user) {
-        List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
-        List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.getId());
-        var scopes = userStoreScopeRepository.findByUserId(user.getId());
-        List<UUID> brandScope = scopes.stream().map(UserStoreScope::getBrandId).distinct().collect(Collectors.toList());
-        List<UUID> storeScope = scopes.stream().map(UserStoreScope::getStoreId).distinct().collect(Collectors.toList());
 
-        return UserResponse.builder()
-                .userId(user.getId())
-                .tenantId(user.getTenantId())
-                .email(user.getEmail())
-                .firstName(user.getFirstName())
-                .lastName(user.getLastName())
-                .status(user.getStatus().name())
-                .roles(roles)
-                .permissions(permissions)
-                .brandScope(brandScope)
-                .storeScope(storeScope)
-                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null)
-                .build();
+    /**
+     * PATCH update: only non-null fields are applied.
+     */
+    @Transactional
+    public UserResponse updateUser(UUID tenantId, UUID id, UpdateAdminUserRequest request) {
+        AdminUser user = getTenantUser(tenantId, id);
+
+        if (request.getFirstName() != null)
+            user.setFirstName(request.getFirstName());
+        if (request.getLastName() != null)
+            user.setLastName(request.getLastName());
+        if (request.getEmail() != null) {
+            if (!user.getEmail().equalsIgnoreCase(request.getEmail())) {
+                adminUserRepository.findByTenantIdAndEmailIgnoreCase(tenantId, request.getEmail())
+                        .ifPresent(u -> {
+                            if (u.getStatus() != AdminUserStatus.DELETED) {
+                                throw new ConflictException("Email already exists");
+                            }
+                        });
+                user.setEmail(request.getEmail());
+            }
+        }
+
+        adminUserRepository.save(user);
+        return toUserResponse(user);
     }
+
+
+    /**
+     * Soft-deactivate: sets status to DISABLED and revokes all refresh tokens.
+     */
+    @Transactional
+    public void deactivateUser(UUID tenantId, UUID callerId, UUID id) {
+        AdminUser user = getTenantUser(tenantId, id);
+        user.setStatus(AdminUserStatus.DISABLED);
+        adminUserRepository.save(user);
+
+        refreshTokenService.revokeAllUserTokens(id);
+        auditService.logUserDeactivated(tenantId, callerId, id);
+    }
+
+
+    // ── Private helpers ──────────────────────────────────────────────
+
+    private AdminUser getTenantUser(UUID tenantId, UUID userId) {
+        AdminUser user = adminUserRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (!user.getTenantId().equals(tenantId)) {
+            throw new ResourceNotFoundException("User not found in tenant");
+        }
+        return user;
+    }
+
 
     private String generateTempPassword() {
         StringBuilder sb = new StringBuilder(16);
@@ -191,5 +226,27 @@ public class AdminUserService {
             chars[j] = temp;
         }
         return new String(chars);
+    }
+
+    private UserResponse toUserResponse(AdminUser user) {
+        List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
+        List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.getId());
+        var scopes = userStoreScopeRepository.findByUserId(user.getId());
+        List<UUID> brandScope = scopes.stream().map(UserStoreScope::getBrandId).distinct().collect(Collectors.toList());
+        List<UUID> storeScope = scopes.stream().map(UserStoreScope::getStoreId).distinct().collect(Collectors.toList());
+
+        return UserResponse.builder()
+                .userId(user.getId())
+                .tenantId(user.getTenantId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .status(user.getStatus().name())
+                .roles(roles)
+                .permissions(permissions)
+                .brandScope(brandScope)
+                .storeScope(storeScope)
+                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null)
+                .build();
     }
 }
