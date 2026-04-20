@@ -185,7 +185,25 @@ public class AuthService {
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null)
                 .build();
     }
+    @Transactional(readOnly = true)
+    public UserResponse getCurrentUser(String token) {
+        // Step 1-3
+        UUID userId = jwtService.extractUserId(token);
 
+        // Step 4: Load from DB to get fresh permissions
+        AdminUser user = adminUserRepository.findById(userId)
+                .orElseThrow(() -> new com.loyalty.identity_service.exception.UnauthorizedException("User not found"));
+
+        if (!user.isActive()) {
+            throw new com.loyalty.identity_service.exception.UnauthorizedException("User account is not active");
+        }
+
+        TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
+                .orElseThrow(
+                        () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
+
+        return buildUserResponse(user, tenant);
+    }
 
 
 }
