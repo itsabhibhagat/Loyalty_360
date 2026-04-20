@@ -3,9 +3,10 @@ package com.loyalty.identity_service.service;
 import com.loyalty.identity_service.entity.AdminUser;
 import com.loyalty.identity_service.entity.AuthAuditLog;
 import com.loyalty.identity_service.repository.AuthAuditLogRepository;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +28,27 @@ public class AuditService {
             String ipAddress, String userAgent) {
         log("LOGIN_FAILED", false, user.getTenantId(), user.getId(), user.getEmail(),
                 reason, ipAddress, userAgent);
+    }
+
+    public void logTokenRefreshed(AdminUser user, String ipAddress, String userAgent) {
+        log("TOKEN_REFRESHED", true, user.getTenantId(), user.getId(), user.getEmail(),
+                null, ipAddress, userAgent);
+    }
+
+    public void logUserCreated(UUID tenantId, UUID actorId, UUID createdUserId) {
+        log("USER_CREATED", true, tenantId, actorId, null, null, null, null);
+    }
+
+    public void logUserDeactivated(UUID tenantId, UUID actorId, UUID targetUserId) {
+        log("USER_DEACTIVATED", true, tenantId, actorId, null, null, null, null);
+    }
+
+    public void logRolesAssigned(UUID tenantId, UUID actorId, UUID targetUserId) {
+        log("ROLES_ASSIGNED", true, tenantId, actorId, null, null, null, null);
+    }
+
+    public void logStoreScopesAssigned(UUID tenantId, UUID actorId, UUID targetUserId) {
+        log("STORE_SCOPES_ASSIGNED", true, tenantId, actorId, null, null, null, null);
     }
 
 

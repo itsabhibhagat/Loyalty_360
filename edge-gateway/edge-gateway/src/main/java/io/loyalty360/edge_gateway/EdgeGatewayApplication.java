@@ -1,11 +1,13 @@
-package com.loyalty.identity_service;
+package io.loyalty360.edge_gateway;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class IdentityServiceApplication {
+public class EdgeGatewayApplication {
+
 	public static void main(String[] args) {
-		SpringApplication.run(IdentityServiceApplication.class, args);
+		SpringApplication.run(EdgeGatewayApplication.class, args);
 	}
+
 }

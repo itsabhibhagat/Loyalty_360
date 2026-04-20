@@ -31,16 +31,6 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    /**
-     * POST /auth/logout
-     * Revokes the provided refresh token.
-     */
-    @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(
-            @Valid @RequestBody LogoutRequest request) {
-        authService.logout(request);
-        return ResponseEntity.ok(ApiResponse.ok(null));
-    }
 
 
     private String getClientIp(HttpServletRequest request) {
