@@ -3,9 +3,10 @@ package com.loyalty.identity_service.service;
 import com.loyalty.identity_service.entity.AdminUser;
 import com.loyalty.identity_service.entity.AuthAuditLog;
 import com.loyalty.identity_service.repository.AuthAuditLogRepository;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +33,10 @@ public class AuditService {
     public void logTokenRefreshed(AdminUser user, String ipAddress, String userAgent) {
         log("TOKEN_REFRESHED", true, user.getTenantId(), user.getId(), user.getEmail(),
                 null, ipAddress, userAgent);
+    }
+
+    public void logUserCreated(UUID tenantId, UUID actorId, UUID createdUserId) {
+        log("USER_CREATED", true, tenantId, actorId, null, null, null, null);
     }
 
 

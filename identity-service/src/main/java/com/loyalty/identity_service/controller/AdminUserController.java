@@ -1,11 +1,15 @@
 package com.loyalty.identity_service.controller;
 
 import com.loyalty.identity_service.dto.ApiResponse;
+import com.loyalty.identity_service.dto.CreateAdminUserRequest;
+import com.loyalty.identity_service.dto.CreateAdminUserResponse;
 import com.loyalty.identity_service.dto.UserResponse;
 import com.loyalty.identity_service.service.AdminUserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +22,21 @@ public class AdminUserController {
 
     private final AdminUserService adminUserService;
 
+    /**
+     * POST /admin/users
+     * Creates a new admin user with a temporary password.
+     * Requires admin_user.manage permission.
+     */
+    @PostMapping
+    @PreAuthorize("hasAuthority('admin_user.manage')")
+    public ResponseEntity<ApiResponse<CreateAdminUserResponse>> createUser(
+            @RequestHeader("X-Tenant-Id") UUID tenantId,
+            @RequestHeader("X-User-Id") UUID callerId,
+            @Valid @RequestBody CreateAdminUserRequest request) {
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok(adminUserService.createUser(tenantId, callerId, request)));
+    }
 
     /**
      * GET /admin/users?page=0&size=20&status=ACTIVE

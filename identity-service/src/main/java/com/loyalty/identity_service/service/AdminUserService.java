@@ -1,11 +1,16 @@
 package com.loyalty.identity_service.service;
 
-import com.loyalty.identity_service.dto.*;
+import com.loyalty.identity_service.dto.CreateAdminUserRequest;
+import com.loyalty.identity_service.dto.CreateAdminUserResponse;
+import com.loyalty.identity_service.dto.UserResponse;
 import com.loyalty.identity_service.entity.*;
 import com.loyalty.identity_service.exception.ConflictException;
 import com.loyalty.identity_service.exception.ForbiddenException;
 import com.loyalty.identity_service.exception.ResourceNotFoundException;
-import com.loyalty.identity_service.repository.*;
+import com.loyalty.identity_service.repository.AdminUserRepository;
+import com.loyalty.identity_service.repository.RoleRepository;
+import com.loyalty.identity_service.repository.UserRoleRepository;
+import com.loyalty.identity_service.repository.UserStoreScopeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -27,6 +32,12 @@ public class AdminUserService {
     private final AdminUserRepository adminUserRepository;
     private final UserRoleRepository userRoleRepository;
     private final UserStoreScopeRepository userStoreScopeRepository;
+    private final RoleRepository roleRepository;
+    private final AuditService auditService;
+    private final PasswordEncoder passwordEncoder;
+
+    private static final String TEMP_PASS_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
      * Lists admin users for a tenant, filtered by status, with pagination.
@@ -50,6 +61,95 @@ public class AdminUserService {
     }
 
 
+    /**
+     * Creates a new admin user with a temporary password.
+     * Steps: validate email uniqueness → generate temp password → hash → insert →
+     * assign roles → assign scopes → audit.
+     */
+    @Transactional
+    public CreateAdminUserResponse createUser(UUID tenantId, UUID callerId, CreateAdminUserRequest request) {
+        // Check email uniqueness within this tenant
+        adminUserRepository.findByTenantIdAndEmailIgnoreCase(tenantId, request.getEmail())
+                .ifPresent(u -> {
+                    if (u.getStatus() != AdminUserStatus.DELETED) {
+                        throw new ConflictException("Email already exists in this tenant");
+                    }
+                });
+
+        // Generate and hash temp password (BCrypt cost 12)
+        String tempPassword = generateTempPassword();
+        String hash = passwordEncoder.encode(tempPassword);
+
+        // Insert user
+        AdminUser user = AdminUser.builder()
+                .tenantId(tenantId)
+                .email(request.getEmail())
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .passwordHash(hash)
+                .status(AdminUserStatus.ACTIVE)
+                .createdBy(callerId)
+                .build();
+        adminUserRepository.save(user);
+
+        // Assign roles
+        if (request.getRoleCodes() != null && !request.getRoleCodes().isEmpty()) {
+            List<Role> roles = roleRepository.findByCodeIn(request.getRoleCodes());
+            if (roles.size() != request.getRoleCodes().size()) {
+                throw new ResourceNotFoundException("One or more roles not found");
+            }
+            for (Role role : roles) {
+                // System roles can be assigned to any tenant; custom roles must belong to same
+                // tenant
+                if (!role.getIsSystem() && (role.getTenantId() == null || !role.getTenantId().equals(tenantId))) {
+                    throw new ForbiddenException("Cannot assign role from another tenant");
+                }
+                UserRole ur = UserRole.builder()
+                        .user(user)
+                        .role(role)
+                        .tenantId(tenantId)
+                        .assignedBy(callerId)
+                        .build();
+                userRoleRepository.save(ur);
+            }
+        }
+
+        // Assign store scopes
+        if (request.getStoreScope() != null && !request.getStoreScope().isEmpty()) {
+            UUID defaultBrandId = (request.getBrandScope() != null && !request.getBrandScope().isEmpty())
+                    ? request.getBrandScope().get(0)
+                    : UUID.fromString("00000000-0000-0000-0000-000000000000");
+            for (UUID storeId : request.getStoreScope()) {
+                UserStoreScope uss = UserStoreScope.builder()
+                        .user(user)
+                        .tenantId(tenantId)
+                        .brandId(defaultBrandId)
+                        .storeId(storeId)
+                        .build();
+                userStoreScopeRepository.save(uss);
+            }
+        }
+
+        // Audit log
+        auditService.logUserCreated(tenantId, callerId, user.getId());
+
+        // Build response with temp password
+        CreateAdminUserResponse response = new CreateAdminUserResponse();
+        response.setUserId(user.getId());
+        response.setTenantId(tenantId);
+        response.setEmail(user.getEmail());
+        response.setFirstName(user.getFirstName());
+        response.setLastName(user.getLastName());
+        response.setStatus(user.getStatus().name());
+        response.setRoles(request.getRoleCodes());
+        response.setStoreScope(request.getStoreScope());
+        response.setBrandScope(request.getBrandScope());
+        response.setTemporaryPassword(tempPassword);
+        response.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null);
+
+        return response;
+    }
+
     private UserResponse toUserResponse(AdminUser user) {
         List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
         List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.getId());
@@ -72,7 +172,24 @@ public class AdminUserService {
                 .build();
     }
 
-
-
-
+    private String generateTempPassword() {
+        StringBuilder sb = new StringBuilder(16);
+        // Ensure at least one uppercase, one lowercase, one digit, one special
+        sb.append(TEMP_PASS_CHARS.charAt(RANDOM.nextInt(26))); // uppercase A-Z
+        sb.append(TEMP_PASS_CHARS.charAt(26 + RANDOM.nextInt(26))); // lowercase a-z
+        sb.append(TEMP_PASS_CHARS.charAt(52 + RANDOM.nextInt(10))); // digit 0-9
+        sb.append(TEMP_PASS_CHARS.charAt(62 + RANDOM.nextInt(8))); // special char
+        for (int i = 4; i < 16; i++) {
+            sb.append(TEMP_PASS_CHARS.charAt(RANDOM.nextInt(TEMP_PASS_CHARS.length())));
+        }
+        // Shuffle to avoid predictable positions
+        char[] chars = sb.toString().toCharArray();
+        for (int i = chars.length - 1; i > 0; i--) {
+            int j = RANDOM.nextInt(i + 1);
+            char temp = chars[i];
+            chars[i] = chars[j];
+            chars[j] = temp;
+        }
+        return new String(chars);
+    }
 }
