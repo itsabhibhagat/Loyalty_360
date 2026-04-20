@@ -97,5 +97,21 @@ public class AdminUserController {
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
+    /**
+     * POST /admin/users/{id}/store-scopes
+     * Full replacement of the user's store scope assignments.
+     */
+    @PostMapping("/{id}/store-scopes")
+    @PreAuthorize("hasAuthority('admin_user.manage')")
+    public ResponseEntity<ApiResponse<Void>> assignStoreScopes(
+            @RequestHeader("X-Tenant-Id") UUID tenantId,
+            @RequestHeader("X-User-Id") UUID callerId,
+            @PathVariable UUID id,
+            @Valid @RequestBody AssignStoreScopesRequest request) {
+
+        adminUserService.assignStoreScopes(tenantId, callerId, id, request);
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
 
 }

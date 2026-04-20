@@ -29,10 +29,6 @@ public class AuthService {
     private final TenantRegistryRepository tenantRegistryRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
-    private final RefreshTokenService refreshTokenService;
-    private final UserRoleRepository userRoleRepository;
-    private final UserStoreScopeRepository userStoreScopeRepository;
-    private final JwtService jwtService;
 
     @Transactional
     public AuthResponse login(LoginRequest request, String ipAddress, String userAgent) {
@@ -94,42 +90,6 @@ public class AuthService {
         return buildAuthResponse(user, tenant, UUID.randomUUID(), ipAddress, userAgent, false);
     }
 
-    @Transactional
-    public AuthResponse refresh(RefreshRequest request, String ipAddress, String userAgent) {
-        RefreshToken token = refreshTokenService.validateAndGetToken(request.getRefreshToken());
-
-        if (token == null) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid or expired refresh token");
-        }
-
-        AdminUser user = token.getUser();
-        if (!user.isActive()) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("User account is not active");
-        }
-
-        TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
-                .orElseThrow(
-                        () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
-
-        String newRefreshToken = refreshTokenService.rotateToken(token, user, tenant, ipAddress, userAgent);
-
-        AuthResponse res = buildAuthResponse(user, tenant, token.getTokenFamily(), ipAddress, userAgent, true);
-        // Override the token with the rotated one
-        res.setRefreshToken(newRefreshToken);
-
-        auditService.logTokenRefreshed(user, ipAddress, userAgent);
-
-        return res;
-    }
-
-    @Transactional
-    public void logout(LogoutRequest request) {
-        refreshTokenService.revokeToken(request.getRefreshToken());
-        // For audit parsing, we lookup the token to get the user
-        String hash = RefreshTokenService.sha256Hex(request.getRefreshToken());
-        refreshTokenService.validateAndGetToken(hash); // won't return anything if just revoked, but let's lookup
-        // manually
-    }
 
     private AuthResponse buildAuthResponse(AdminUser user, TenantRegistry tenant, UUID tokenFamily,
                                            String ipAddress, String userAgent, boolean isRefresh) {
@@ -155,55 +115,4 @@ public class AuthService {
                 .expiresIn(jwtService.getAccessTokenExpirySeconds())
                 .user(buildUserResponse(user, tenant, roles, permissions, brandScope, storeScope))
                 .build();
-    }
-    private UserResponse buildUserResponse(AdminUser user, TenantRegistry tenant) {
-        List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
-        List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.getId());
-
-        var scopes = userStoreScopeRepository.findByUserId(user.getId());
-        List<UUID> brandScope = scopes.stream().map(s -> s.getBrandId()).distinct().collect(Collectors.toList());
-        List<UUID> storeScope = scopes.stream().map(s -> s.getStoreId()).distinct().collect(Collectors.toList());
-
-        return buildUserResponse(user, tenant, roles, permissions, brandScope, storeScope);
-    }
-
-    private UserResponse buildUserResponse(AdminUser user, TenantRegistry tenant,
-                                           List<String> roles, List<String> permissions,
-                                           List<UUID> brandScope, List<UUID> storeScope) {
-        return UserResponse.builder()
-                .userId(user.getId())
-                .tenantId(tenant.getId())
-                .tenantSlug(tenant.getSlug())
-                .email(user.getEmail())
-                .firstName(user.getFirstName())
-                .lastName(user.getLastName())
-                .status(user.getStatus().name())
-                .roles(roles)
-                .permissions(permissions)
-                .brandScope(brandScope)
-                .storeScope(storeScope)
-                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null)
-                .build();
-    }
-    @Transactional(readOnly = true)
-    public UserResponse getCurrentUser(String token) {
-        // Step 1-3
-        UUID userId = jwtService.extractUserId(token);
-
-        // Step 4: Load from DB to get fresh permissions
-        AdminUser user = adminUserRepository.findById(userId)
-                .orElseThrow(() -> new com.loyalty.identity_service.exception.UnauthorizedException("User not found"));
-
-        if (!user.isActive()) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("User account is not active");
-        }
-
-        TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
-                .orElseThrow(
-                        () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
-
-        return buildUserResponse(user, tenant);
-    }
-
-
-}
+    }}
