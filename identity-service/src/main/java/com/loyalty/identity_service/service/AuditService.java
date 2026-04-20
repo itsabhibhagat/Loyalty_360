@@ -29,6 +29,11 @@ public class AuditService {
                 reason, ipAddress, userAgent);
     }
 
+    public void logTokenRefreshed(AdminUser user, String ipAddress, String userAgent) {
+        log("TOKEN_REFRESHED", true, user.getTenantId(), user.getId(), user.getEmail(),
+                null, ipAddress, userAgent);
+    }
+
 
     private void log(String eventType, boolean success, UUID tenantId,
             UUID actorId, String actorEmail, String failureReason,

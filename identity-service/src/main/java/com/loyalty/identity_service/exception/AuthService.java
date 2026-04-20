@@ -1,4 +1,4 @@
-package com.loyalty.identity_service.service;
+package com.loyalty.identity_service.exception;
 
 import com.loyalty.identity_service.config.JwtService;
 import com.loyalty.identity_service.dto.*;
@@ -10,15 +10,18 @@ import com.loyalty.identity_service.repository.AdminUserRepository;
 import com.loyalty.identity_service.repository.TenantRegistryRepository;
 import com.loyalty.identity_service.repository.UserRoleRepository;
 import com.loyalty.identity_service.repository.UserStoreScopeRepository;
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import com.loyalty.identity_service.service.AuditService;
+import com.loyalty.identity_service.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,12 +30,12 @@ public class AuthService {
 
     private final AdminUserRepository adminUserRepository;
     private final TenantRegistryRepository tenantRegistryRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final AuditService auditService;
-    private final RefreshTokenService refreshTokenService;
     private final UserRoleRepository userRoleRepository;
     private final UserStoreScopeRepository userStoreScopeRepository;
+    private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
+    private final AuditService auditService;
 
     @Transactional
     public AuthResponse login(LoginRequest request, String ipAddress, String userAgent) {
@@ -43,7 +46,7 @@ public class AuthService {
 
         if (tenant == null) {
             auditService.logLoginFailed(null, request.getEmail(), "Tenant not found or inactive", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Step 4-5: Lookup user
@@ -52,18 +55,18 @@ public class AuthService {
 
         if (user == null) {
             auditService.logLoginFailed(tenant.getId(), request.getEmail(), "User not found", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Step 6: Check status and lockout
         if (user.getStatus() == AdminUserStatus.DISABLED || user.getStatus() == AdminUserStatus.DELETED) {
             auditService.logLoginFailedWithUser(user, "Account disabled", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         if (user.isLocked()) {
             auditService.logLoginFailedWithUser(user, "Account locked", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException(
+            throw new UnauthorizedException(
                     "Account temporarily locked. Try again later.");
         } else if (user.getStatus() == AdminUserStatus.LOCKED) {
             // Lock expired
@@ -81,7 +84,7 @@ public class AuthService {
             }
             adminUserRepository.save(user);
             auditService.logLoginFailedWithUser(user, "Invalid password", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Step 8: Success
@@ -94,22 +97,42 @@ public class AuthService {
         return buildAuthResponse(user, tenant, UUID.randomUUID(), ipAddress, userAgent, false);
     }
 
+    @Transactional(readOnly = true)
+    public UserResponse getCurrentUser(String token) {
+        // Step 1-3
+        UUID userId = jwtService.extractUserId(token);
+
+        // Step 4: Load from DB to get fresh permissions
+        AdminUser user = adminUserRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+
+        if (!user.isActive()) {
+            throw new UnauthorizedException("User account is not active");
+        }
+
+        TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
+                .orElseThrow(
+                        () -> new UnauthorizedException("Tenant not found"));
+
+        return buildUserResponse(user, tenant);
+    }
+
     @Transactional
     public AuthResponse refresh(RefreshRequest request, String ipAddress, String userAgent) {
         RefreshToken token = refreshTokenService.validateAndGetToken(request.getRefreshToken());
 
         if (token == null) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid or expired refresh token");
+            throw new UnauthorizedException("Invalid or expired refresh token");
         }
 
         AdminUser user = token.getUser();
         if (!user.isActive()) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("User account is not active");
+            throw new UnauthorizedException("User account is not active");
         }
 
         TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
                 .orElseThrow(
-                        () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
+                        () -> new UnauthorizedException("Tenant not found"));
 
         String newRefreshToken = refreshTokenService.rotateToken(token, user, tenant, ipAddress, userAgent);
 
@@ -128,11 +151,11 @@ public class AuthService {
         // For audit parsing, we lookup the token to get the user
         String hash = RefreshTokenService.sha256Hex(request.getRefreshToken());
         refreshTokenService.validateAndGetToken(hash); // won't return anything if just revoked, but let's lookup
-        // manually
+                                                       // manually
     }
 
     private AuthResponse buildAuthResponse(AdminUser user, TenantRegistry tenant, UUID tokenFamily,
-                                           String ipAddress, String userAgent, boolean isRefresh) {
+            String ipAddress, String userAgent, boolean isRefresh) {
         List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
         List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.getId());
 
@@ -156,6 +179,7 @@ public class AuthService {
                 .user(buildUserResponse(user, tenant, roles, permissions, brandScope, storeScope))
                 .build();
     }
+
     private UserResponse buildUserResponse(AdminUser user, TenantRegistry tenant) {
         List<String> roles = userRoleRepository.findRoleCodesByUserId(user.getId());
         List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.getId());
@@ -168,8 +192,8 @@ public class AuthService {
     }
 
     private UserResponse buildUserResponse(AdminUser user, TenantRegistry tenant,
-                                           List<String> roles, List<String> permissions,
-                                           List<UUID> brandScope, List<UUID> storeScope) {
+            List<String> roles, List<String> permissions,
+            List<UUID> brandScope, List<UUID> storeScope) {
         return UserResponse.builder()
                 .userId(user.getId())
                 .tenantId(tenant.getId())
@@ -185,7 +209,4 @@ public class AuthService {
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null)
                 .build();
     }
-
-
-
 }
