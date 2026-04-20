@@ -1,0 +1,10 @@
+package com.loyalty.identity_service.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+@Data
+public class RefreshRequest {
+    @NotBlank(message = "refresh_token is required")
+    private String refreshToken;
+}
