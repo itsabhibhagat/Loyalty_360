@@ -43,6 +43,14 @@ public class AuditService {
         log("USER_DEACTIVATED", true, tenantId, actorId, null, null, null, null);
     }
 
+    public void logRolesAssigned(UUID tenantId, UUID actorId, UUID targetUserId) {
+        log("ROLES_ASSIGNED", true, tenantId, actorId, null, null, null, null);
+    }
+
+    public void logStoreScopesAssigned(UUID tenantId, UUID actorId, UUID targetUserId) {
+        log("STORE_SCOPES_ASSIGNED", true, tenantId, actorId, null, null, null, null);
+    }
+
 
     private void log(String eventType, boolean success, UUID tenantId,
             UUID actorId, String actorEmail, String failureReason,

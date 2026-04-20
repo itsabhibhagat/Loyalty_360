@@ -1,9 +1,6 @@
 package com.loyalty.identity_service.service;
 
-import com.loyalty.identity_service.dto.CreateAdminUserRequest;
-import com.loyalty.identity_service.dto.CreateAdminUserResponse;
-import com.loyalty.identity_service.dto.UpdateAdminUserRequest;
-import com.loyalty.identity_service.dto.UserResponse;
+import com.loyalty.identity_service.dto.*;
 import com.loyalty.identity_service.entity.*;
 import com.loyalty.identity_service.exception.ConflictException;
 import com.loyalty.identity_service.exception.ForbiddenException;
@@ -192,6 +189,31 @@ public class AdminUserService {
 
         refreshTokenService.revokeAllUserTokens(id);
         auditService.logUserDeactivated(tenantId, callerId, id);
+    }
+
+    /**
+     * Full replacement of a user's roles.
+     */
+    @Transactional
+    public void assignRoles(UUID tenantId, UUID callerId, UUID id, AssignRolesRequest request) {
+        AdminUser user = getTenantUser(tenantId, id);
+
+        userRoleRepository.deleteByUserId(id);
+
+        if (request.getRoleCodes() != null && !request.getRoleCodes().isEmpty()) {
+            List<Role> roles = roleRepository.findByCodeIn(request.getRoleCodes());
+            for (Role role : roles) {
+                UserRole ur = UserRole.builder()
+                        .user(user)
+                        .role(role)
+                        .tenantId(tenantId)
+                        .assignedBy(callerId)
+                        .build();
+                userRoleRepository.save(ur);
+            }
+        }
+
+        auditService.logRolesAssigned(tenantId, callerId, id);
     }
 
 

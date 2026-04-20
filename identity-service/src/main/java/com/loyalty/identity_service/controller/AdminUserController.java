@@ -81,5 +81,21 @@ public class AdminUserController {
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
+    /**
+     * POST /admin/users/{id}/roles
+     * Full replacement of the user's role assignments.
+     */
+    @PostMapping("/{id}/roles")
+    @PreAuthorize("hasAuthority('admin_user.manage')")
+    public ResponseEntity<ApiResponse<Void>> assignRoles(
+            @RequestHeader("X-Tenant-Id") UUID tenantId,
+            @RequestHeader("X-User-Id") UUID callerId,
+            @PathVariable UUID id,
+            @Valid @RequestBody AssignRolesRequest request) {
+
+        adminUserService.assignRoles(tenantId, callerId, id, request);
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
 
 }
