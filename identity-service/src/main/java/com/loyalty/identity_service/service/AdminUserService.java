@@ -216,6 +216,29 @@ public class AdminUserService {
         auditService.logRolesAssigned(tenantId, callerId, id);
     }
 
+    /**
+     * Full replacement of a user's store scopes.
+     */
+    @Transactional
+    public void assignStoreScopes(UUID tenantId, UUID callerId, UUID id, AssignStoreScopesRequest request) {
+        AdminUser user = getTenantUser(tenantId, id);
+
+        userStoreScopeRepository.deleteByUserId(id);
+
+        if (request.getScopes() != null) {
+            for (var scope : request.getScopes()) {
+                UserStoreScope uss = UserStoreScope.builder()
+                        .user(user)
+                        .tenantId(tenantId)
+                        .brandId(scope.getBrandId())
+                        .storeId(scope.getStoreId())
+                        .build();
+                userStoreScopeRepository.save(uss);
+            }
+        }
+
+        auditService.logStoreScopesAssigned(tenantId, callerId, id);
+    }
 
     // ── Private helpers ──────────────────────────────────────────────
 
