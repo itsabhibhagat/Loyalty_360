@@ -32,6 +32,21 @@ public class AuthController {
     }
 
     /**
+     * POST /auth/token/refresh
+     * Rotates the refresh token and issues a new access_token.
+     * Implements theft detection via token families.
+     */
+    @PostMapping("/token/refresh")
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(
+            @Valid @RequestBody RefreshRequest request,
+            HttpServletRequest httpRequest) {
+        String ip = getClientIp(httpRequest);
+        String ua = httpRequest.getHeader(HttpHeaders.USER_AGENT);
+        AuthResponse response = authService.refresh(request, ip, ua);
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /**
      * POST /auth/logout
      * Revokes the provided refresh token.
      */
