@@ -29,6 +29,7 @@ public class AuthService {
     private final TenantRegistryRepository tenantRegistryRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional
     public AuthResponse login(LoginRequest request, String ipAddress, String userAgent) {
@@ -90,6 +91,14 @@ public class AuthService {
         return buildAuthResponse(user, tenant, UUID.randomUUID(), ipAddress, userAgent, false);
     }
 
+    @Transactional
+    public void logout(LogoutRequest request) {
+        refreshTokenService.revokeToken(request.getRefreshToken());
+        // For audit parsing, we lookup the token to get the user
+        String hash = RefreshTokenService.sha256Hex(request.getRefreshToken());
+        refreshTokenService.validateAndGetToken(hash); // won't return anything if just revoked, but let's lookup
+        // manually
+    }
 
     private AuthResponse buildAuthResponse(AdminUser user, TenantRegistry tenant, UUID tokenFamily,
                                            String ipAddress, String userAgent, boolean isRefresh) {
