@@ -1,0 +1,61 @@
+server:
+  port: 8000
+
+spring:
+  application:
+    name: edge-gateway
+  
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Verify tokens using public keys from the identity-service JWKS endpoint
+          jwk-set-uri: ${JWKS_URI:http://localhost:8080/.well-known/jwks.json}
+
+  cloud:
+    gateway:
+      routes:
+        # Route 1: Identity Service (Authentication) - Public
+        - id: auth-public
+          uri: ${IDENTITY_SERVICE_URL:http://localhost:8080}
+          predicates:
+            - Path=/auth/**, /.well-known/**
+        
+        # Route 2: Identity Service (Admin Users Management)
+        - id: auth-admin
+          uri: ${IDENTITY_SERVICE_URL:http://localhost:8080}
+          predicates:
+            - Path=/admin/users/**
+          filters:
+            # We inject the authenticated claims as trusted headers before forwarding
+            - InjectTrustedHeaders
+        
+        # Route 3: Admin Core Service
+        - id: admin-core
+          uri: ${ADMIN_CORE_URL:http://localhost:8081}
+          predicates:
+            - Path=/admin/**
+          filters:
+            - InjectTrustedHeaders
+
+        # Route 4: Brand Service
+        - id: brand-service
+          uri: ${BRAND_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/brand/**
+          filters:
+            - InjectTrustedHeaders
+
+        # Route 5: Customer Service
+        - id: customer-service
+          uri: ${CUSTOMER_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/customer/**
+          filters:
+            - InjectTrustedHeaders
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: INFO
+    io.loyalty360: DEBUG
