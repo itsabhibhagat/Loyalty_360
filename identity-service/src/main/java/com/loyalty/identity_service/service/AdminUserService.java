@@ -37,6 +37,14 @@ public class AdminUserService {
 
     private static final String TEMP_PASS_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final List<String> ROLE_HIERARCHY = List.of(
+            "PLATFORM_OPERATOR",
+            "TENANT_OWNER",
+            "BRAND_MANAGER",
+            "STORE_ADMIN",
+            "CUSTOMER_SUPPORT",
+            "FINANCE_VIEWER"
+    );
 
     /**
      * Lists admin users for a tenant, filtered by status, with pagination.
@@ -67,7 +75,8 @@ public class AdminUserService {
      */
     @Transactional
     public CreateAdminUserResponse createUser(UUID tenantId, UUID callerId, CreateAdminUserRequest request) {
-        // Check email uniqueness within this tenant
+
+        // 1. Check email uniqueness
         adminUserRepository.findByTenantIdAndEmailIgnoreCase(tenantId, request.getEmail())
                 .ifPresent(u -> {
                     if (u.getStatus() != AdminUserStatus.DELETED) {
@@ -75,11 +84,44 @@ public class AdminUserService {
                     }
                 });
 
-        // Generate and hash temp password (BCrypt cost 12)
+        // 2. Fetch roles to assign
+        List<Role> roles = List.of();
+        if (request.getRoleCodes() != null && !request.getRoleCodes().isEmpty()) {
+            roles = roleRepository.findByCodeIn(request.getRoleCodes());
+
+            if (roles.size() != request.getRoleCodes().size()) {
+                throw new ResourceNotFoundException("One or more roles not found");
+            }
+        }
+
+        // 3. Fetch caller roles
+        List<String> callerRoles = userRoleRepository.findRoleCodesByUserId(callerId);
+
+        if (callerRoles == null || callerRoles.isEmpty()) {
+            throw new ForbiddenException("You have no roles assigned");
+        }
+
+        // 4. 🔐 VALIDATE ROLE HIERARCHY (BEFORE creating user)
+        for (Role role : roles) {
+
+            if (!canAssignRole(callerRoles, role)) {
+                throw new ForbiddenException(
+                        "You are not authorized to assign role: " + role.getCode()
+                );
+            }
+
+            // Tenant validation
+            if (!role.getIsSystem() &&
+                    (role.getTenantId() == null || !role.getTenantId().equals(tenantId))) {
+                throw new ForbiddenException("Cannot assign role from another tenant");
+            }
+        }
+
+        // 5. Generate temp password
         String tempPassword = generateTempPassword();
         String hash = passwordEncoder.encode(tempPassword);
 
-        // Insert user
+        // 6. Create user (ONLY AFTER validation)
         AdminUser user = AdminUser.builder()
                 .tenantId(tenantId)
                 .email(request.getEmail())
@@ -89,35 +131,27 @@ public class AdminUserService {
                 .status(AdminUserStatus.ACTIVE)
                 .createdBy(callerId)
                 .build();
+
         adminUserRepository.save(user);
 
-        // Assign roles
-        if (request.getRoleCodes() != null && !request.getRoleCodes().isEmpty()) {
-            List<Role> roles = roleRepository.findByCodeIn(request.getRoleCodes());
-            if (roles.size() != request.getRoleCodes().size()) {
-                throw new ResourceNotFoundException("One or more roles not found");
-            }
-            for (Role role : roles) {
-                // System roles can be assigned to any tenant; custom roles must belong to same
-                // tenant
-                if (!role.getIsSystem() && (role.getTenantId() == null || !role.getTenantId().equals(tenantId))) {
-                    throw new ForbiddenException("Cannot assign role from another tenant");
-                }
-                UserRole ur = UserRole.builder()
-                        .user(user)
-                        .role(role)
-                        .tenantId(tenantId)
-                        .assignedBy(callerId)
-                        .build();
-                userRoleRepository.save(ur);
-            }
+        // 7. Assign roles
+        for (Role role : roles) {
+            UserRole ur = UserRole.builder()
+                    .user(user)
+                    .role(role)
+                    .tenantId(tenantId)
+                    .assignedBy(callerId)
+                    .build();
+
+            userRoleRepository.save(ur);
         }
 
-        // Assign store scopes
+        // 8. Assign store scopes
         if (request.getStoreScope() != null && !request.getStoreScope().isEmpty()) {
             UUID defaultBrandId = (request.getBrandScope() != null && !request.getBrandScope().isEmpty())
                     ? request.getBrandScope().get(0)
                     : UUID.fromString("00000000-0000-0000-0000-000000000000");
+
             for (UUID storeId : request.getStoreScope()) {
                 UserStoreScope uss = UserStoreScope.builder()
                         .user(user)
@@ -125,14 +159,15 @@ public class AdminUserService {
                         .brandId(defaultBrandId)
                         .storeId(storeId)
                         .build();
+
                 userStoreScopeRepository.save(uss);
             }
         }
 
-        // Audit log
+        // 9. Audit log
         auditService.logUserCreated(tenantId, callerId, user.getId());
 
-        // Build response with temp password
+        // 10. Response
         CreateAdminUserResponse response = new CreateAdminUserResponse();
         response.setUserId(user.getId());
         response.setTenantId(tenantId);
@@ -293,5 +328,23 @@ public class AdminUserService {
                 .storeScope(storeScope)
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toInstant() : null)
                 .build();
+    }
+
+    private boolean canAssignRole(List<String> callerRoles, Role targetRole) {
+
+        String targetCode = targetRole.getCode().toUpperCase();
+        int targetLevel = ROLE_HIERARCHY.indexOf(targetCode);
+
+        if (targetLevel == -1) {
+            throw new ForbiddenException("Invalid or unauthorized role: " + targetRole.getCode());
+        }
+
+        int callerBestLevel = callerRoles.stream()
+                .map(role -> ROLE_HIERARCHY.indexOf(role))
+                .filter(i -> i != -1)
+                .min(Integer::compareTo)
+                .orElseThrow(() -> new ForbiddenException("Caller has no valid roles"));
+
+        return callerBestLevel < targetLevel;
     }
 }
