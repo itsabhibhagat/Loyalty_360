@@ -10,6 +10,8 @@ import com.loyalty.identity_service.repository.RoleRepository;
 import com.loyalty.identity_service.repository.UserRoleRepository;
 import com.loyalty.identity_service.repository.UserStoreScopeRepository;
 import com.loyalty.identity_service.service.AdminUserService;
+import com.loyalty.identity_service.service.AuditService;
+import com.loyalty.identity_service.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -32,9 +34,9 @@ public class AdminUserServiceImpl implements AdminUserService {
     private final UserRoleRepository userRoleRepository;
     private final UserStoreScopeRepository userStoreScopeRepository;
     private final RoleRepository roleRepository;
-    private final AuditServiceImpl auditServiceimpl;
+    private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
-    private final RefreshTokenServiceImpl refreshTokenServiceimpl;
+    private final RefreshTokenService refreshTokenService;
 
     private static final String TEMP_PASS_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -168,7 +170,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
 
         // 9. Audit log
-        auditServiceimpl.logUserCreated(tenantId, callerId, user.getId());
+        auditService.logUserCreated(tenantId, callerId, user.getId());
 
         // 10. Response
         CreateAdminUserResponse response = new CreateAdminUserResponse();
@@ -227,8 +229,8 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setStatus(AdminUserStatus.DISABLED);
         adminUserRepository.save(user);
 
-        refreshTokenServiceimpl.revokeAllUserTokens(id);
-        auditServiceimpl.logUserDeactivated(tenantId, callerId, id);
+        refreshTokenService.revokeAllUserTokens(id);
+        auditService.logUserDeactivated(tenantId, callerId, id);
     }
 
     /**
@@ -254,7 +256,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             }
         }
 
-        auditServiceimpl.logRolesAssigned(tenantId, callerId, id);
+        auditService.logRolesAssigned(tenantId, callerId, id);
     }
 
     /**
@@ -279,7 +281,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             }
         }
 
-        auditServiceimpl.logStoreScopesAssigned(tenantId, callerId, id);
+        auditService.logStoreScopesAssigned(tenantId, callerId, id);
     }
 
     // ── Private helpers ──────────────────────────────────────────────

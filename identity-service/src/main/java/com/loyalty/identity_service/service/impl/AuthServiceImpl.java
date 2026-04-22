@@ -10,7 +10,9 @@ import com.loyalty.identity_service.repository.AdminUserRepository;
 import com.loyalty.identity_service.repository.TenantRegistryRepository;
 import com.loyalty.identity_service.repository.UserRoleRepository;
 import com.loyalty.identity_service.repository.UserStoreScopeRepository;
+import com.loyalty.identity_service.service.AuditService;
 import com.loyalty.identity_service.service.AuthService;
+import com.loyalty.identity_service.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -33,8 +35,8 @@ public class AuthServiceImpl implements AuthService {
     private final UserStoreScopeRepository userStoreScopeRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final RefreshTokenServiceImpl refreshTokenServiceimpl;
-    private final AuditServiceImpl auditServiceimpl;
+    private final RefreshTokenService refreshTokenService;
+    private final AuditService auditService;
 
     @Override
     @Transactional
@@ -45,7 +47,7 @@ public class AuthServiceImpl implements AuthService {
                 .orElse(null);
 
         if (tenant == null) {
-            auditServiceimpl.logLoginFailed(null, request.getEmail(), "Tenant not found or inactive", ipAddress, userAgent);
+            auditService.logLoginFailed(null, request.getEmail(), "Tenant not found or inactive", ipAddress, userAgent);
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
         }
 
@@ -54,18 +56,18 @@ public class AuthServiceImpl implements AuthService {
                 .orElse(null);
 
         if (user == null) {
-            auditServiceimpl.logLoginFailed(tenant.getId(), request.getEmail(), "User not found", ipAddress, userAgent);
+            auditService.logLoginFailed(tenant.getId(), request.getEmail(), "User not found", ipAddress, userAgent);
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
         }
 
         // Step 6: Check status and lockout
         if (user.getStatus() == AdminUserStatus.DISABLED || user.getStatus() == AdminUserStatus.DELETED) {
-            auditServiceimpl.logLoginFailedWithUser(user, "Account disabled", ipAddress, userAgent);
+            auditService.logLoginFailedWithUser(user, "Account disabled", ipAddress, userAgent);
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
         }
 
         if (user.isLocked()) {
-            auditServiceimpl.logLoginFailedWithUser(user, "Account locked", ipAddress, userAgent);
+            auditService.logLoginFailedWithUser(user, "Account locked", ipAddress, userAgent);
             throw new com.loyalty.identity_service.exception.UnauthorizedException(
                     "Account temporarily locked. Try again later.");
         } else if (user.getStatus() == AdminUserStatus.LOCKED) {
@@ -83,7 +85,7 @@ public class AuthServiceImpl implements AuthService {
                 user.setLockedUntil(OffsetDateTime.now().plusMinutes(30));
             }
             adminUserRepository.save(user);
-            auditServiceimpl.logLoginFailedWithUser(user, "Invalid password", ipAddress, userAgent);
+            auditService.logLoginFailedWithUser(user, "Invalid password", ipAddress, userAgent);
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
         }
 
@@ -121,7 +123,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse refresh(RefreshRequest request, String ipAddress, String userAgent) {
-        RefreshToken token = refreshTokenServiceimpl.validateAndGetToken(request.getRefreshToken());
+        RefreshToken token = refreshTokenService.validateAndGetToken(request.getRefreshToken());
 
         if (token == null) {
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid or expired refresh token");
@@ -136,13 +138,13 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(
                         () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
 
-        String newRefreshToken = refreshTokenServiceimpl.rotateToken(token, user, tenant, ipAddress, userAgent);
+        String newRefreshToken = refreshTokenService.rotateToken(token, user, tenant, ipAddress, userAgent);
 
         AuthResponse res = buildAuthResponse(user, tenant, token.getTokenFamily(), ipAddress, userAgent, true);
         // Override the token with the rotated one
         res.setRefreshToken(newRefreshToken);
 
-        auditServiceimpl.logTokenRefreshed(user, ipAddress, userAgent);
+        auditService.logTokenRefreshed(user, ipAddress, userAgent);
 
         return res;
     }
@@ -150,10 +152,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void logout(LogoutRequest request) {
-        refreshTokenServiceimpl.revokeToken(request.getRefreshToken());
+        refreshTokenService.revokeToken(request.getRefreshToken());
         // For audit parsing, we lookup the token to get the user
         String hash = RefreshTokenServiceImpl.sha256Hex(request.getRefreshToken());
-        refreshTokenServiceimpl.validateAndGetToken(hash); // won't return anything if just revoked, but let's lookup
+        refreshTokenService.validateAndGetToken(hash); // won't return anything if just revoked, but let's lookup
         // manually
     }
 
@@ -170,8 +172,8 @@ public class AuthServiceImpl implements AuthService {
 
         String refreshToken = null;
         if (!isRefresh) {
-            refreshToken = refreshTokenServiceimpl.issueRefreshToken(user, tenant, tokenFamily, ipAddress, userAgent);
-            auditServiceimpl.logLoginSuccess(user, ipAddress, userAgent);
+            refreshToken = refreshTokenService.issueRefreshToken(user, tenant, tokenFamily, ipAddress, userAgent);
+            auditService.logLoginSuccess(user, ipAddress, userAgent);
         }
 
         return AuthResponse.builder()

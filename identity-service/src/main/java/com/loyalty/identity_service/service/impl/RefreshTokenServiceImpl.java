@@ -140,6 +140,7 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
     /**
      * Revoke all tokens for a user (for deactivation).
      */
+    @Override
     @Transactional
     public void revokeAllUserTokens(UUID userId) {
         refreshTokenRepository.revokeAllByUserId(userId, OffsetDateTime.now());
@@ -148,6 +149,7 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
     /**
      * Revoke an entire token family (theft detection).
      */
+    @Override
     @Transactional
     public void revokeFamily(UUID tokenFamily) {
         List<RefreshToken> familyTokens = refreshTokenRepository.findByTokenFamily(tokenFamily);

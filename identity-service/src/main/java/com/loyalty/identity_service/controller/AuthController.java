@@ -1,7 +1,7 @@
 package com.loyalty.identity_service.controller;
 
 import com.loyalty.identity_service.dto.*;
-import com.loyalty.identity_service.service.impl.AuthServiceImpl;
+import com.loyalty.identity_service.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final AuthServiceImpl authServiceimpl;
+    private final AuthService authService;
 
     /**
      * POST /auth/admin/login
@@ -27,7 +27,7 @@ public class AuthController {
             HttpServletRequest httpRequest) {
         String ip = getClientIp(httpRequest);
         String ua = httpRequest.getHeader(HttpHeaders.USER_AGENT);
-        AuthResponse response = authServiceimpl.login(request, ip, ua);
+        AuthResponse response = authService.login(request, ip, ua);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
@@ -43,7 +43,7 @@ public class AuthController {
                     "Missing or invalid Authorization header");
         }
         String token = authHeader.substring(7);
-        UserResponse user = authServiceimpl.getCurrentUser(token);
+        UserResponse user = authService.getCurrentUser(token);
         return ResponseEntity.ok(ApiResponse.ok(user));
     }
 
@@ -58,7 +58,7 @@ public class AuthController {
             HttpServletRequest httpRequest) {
         String ip = getClientIp(httpRequest);
         String ua = httpRequest.getHeader(HttpHeaders.USER_AGENT);
-        AuthResponse response = authServiceimpl.refresh(request, ip, ua);
+        AuthResponse response = authService.refresh(request, ip, ua);
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
@@ -69,7 +69,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @Valid @RequestBody LogoutRequest request) {
-        authServiceimpl.logout(request);
+        authService.logout(request);
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
