@@ -1,7 +1,7 @@
 package com.loyalty.identity_service.controller;
 
 import com.loyalty.identity_service.dto.*;
-import com.loyalty.identity_service.service.AdminUserService;
+import com.loyalty.identity_service.service.impl.AdminUserServiceImpl;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.UUID;
 
 @RestController
@@ -17,7 +18,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUserController {
 
-    private final AdminUserService adminUserService;
+    private final AdminUserServiceImpl adminUserServiceimpl;
 
     /**
      * POST /admin/users
@@ -32,7 +33,7 @@ public class AdminUserController {
             @Valid @RequestBody CreateAdminUserRequest request) {
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.ok(adminUserService.createUser(tenantId, callerId, request)));
+                .body(ApiResponse.ok(adminUserServiceimpl.createUser(tenantId, callerId, request)));
     }
 
     /**
@@ -49,7 +50,7 @@ public class AdminUserController {
 
         return ResponseEntity.ok(
                 ApiResponse
-                        .ok(adminUserService.listUsers(tenantId, status, PageRequest.of(page, Math.min(size, 100)))));
+                        .ok(adminUserServiceimpl.listUsers(tenantId, status, PageRequest.of(page, Math.min(size, 100)))));
     }
 
     /**
@@ -63,7 +64,7 @@ public class AdminUserController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateAdminUserRequest request) {
 
-        return ResponseEntity.ok(ApiResponse.ok(adminUserService.updateUser(tenantId, id, request)));
+        return ResponseEntity.ok(ApiResponse.ok(adminUserServiceimpl.updateUser(tenantId, id, request)));
     }
 
     /**
@@ -77,7 +78,7 @@ public class AdminUserController {
             @RequestHeader("X-User-Id") UUID callerId,
             @PathVariable UUID id) {
 
-        adminUserService.deactivateUser(tenantId, callerId, id);
+        adminUserServiceimpl.deactivateUser(tenantId, callerId, id);
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
@@ -93,7 +94,7 @@ public class AdminUserController {
             @PathVariable UUID id,
             @Valid @RequestBody AssignRolesRequest request) {
 
-        adminUserService.assignRoles(tenantId, callerId, id, request);
+        adminUserServiceimpl.assignRoles(tenantId, callerId, id, request);
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
@@ -109,7 +110,7 @@ public class AdminUserController {
             @PathVariable UUID id,
             @Valid @RequestBody AssignStoreScopesRequest request) {
 
-        adminUserService.assignStoreScopes(tenantId, callerId, id, request);
+        adminUserServiceimpl.assignStoreScopes(tenantId, callerId, id, request);
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
