@@ -18,5 +18,7 @@ public interface RefreshTokenService {
 
     public void revokeToken(String rawToken);
 
+    public void revokeAllUserTokens(UUID userId);
 
+    public void revokeFamily(UUID tokenFamily);
 }
