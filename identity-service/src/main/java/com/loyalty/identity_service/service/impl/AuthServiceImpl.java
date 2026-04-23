@@ -40,7 +40,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponse login(LoginRequest request, String ipAddress, String userAgent) {
+    public AuthResponse login(LoginRequest request, String ipAddress, String userAgent)  {
         // Step 1-3: Lookup tenant
         TenantRegistry tenant = tenantRegistryRepository.findBySlug(request.getTenantSlug())
                 .filter(t -> "ACTIVE".equals(t.getStatus()))
