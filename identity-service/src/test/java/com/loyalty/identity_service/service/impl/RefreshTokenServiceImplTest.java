@@ -64,6 +64,17 @@ class RefreshTokenServiceImplTest {
         assertNotNull(saved.getTokenHash());
         assertNotNull(saved.getExpiresAt());
     }
+    //Token Uniqueness
+    @Test
+    void shouldGenerateUniqueTokensEachTime() {
+        when(refreshTokenRepository.save(any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        String token1 = service.issueRefreshToken(user, tenant, UUID.randomUUID(), "ip", "ua");
+        String token2 = service.issueRefreshToken(user, tenant, UUID.randomUUID(), "ip", "ua");
+
+        assertNotEquals(token1, token2);
+    }
 
     //SHOULD NOT STORE RAW TOKEN
     @Test
@@ -188,6 +199,43 @@ class RefreshTokenServiceImplTest {
         assertEquals(newToken.getId(), oldToken.getReplacedByTokenId());
     }
 
+    @Test
+    void shouldKeepSameTokenFamilyOnRotation() {
+        ArgumentCaptor<RefreshToken> captor =
+                ArgumentCaptor.forClass(RefreshToken.class);
+
+        when(refreshTokenRepository.save(captor.capture()))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        when(refreshTokenRepository.findByTokenHash(any()))
+                .thenReturn(Optional.of(new RefreshToken()));
+
+        UUID family = UUID.randomUUID();
+
+        RefreshToken oldToken = new RefreshToken();
+        oldToken.setTokenFamily(family);
+
+        service.rotateToken(oldToken, user, tenant, "ip", "agent");
+
+        RefreshToken newToken = captor.getAllValues().get(0);
+
+        assertEquals(family, newToken.getTokenFamily());
+    }
+
+    //Ignore Unknown token
+    @Test
+    void shouldIgnoreUnknownTokenDuringRevoke() {
+        String raw = "unknown";
+        String hash = RefreshTokenServiceImpl.sha256Hex(raw);
+
+        when(refreshTokenRepository.findByTokenHash(hash))
+                .thenReturn(Optional.empty());
+
+        assertDoesNotThrow(() -> service.revokeToken(raw));
+
+        verify(refreshTokenRepository, never()).save(any());
+    }
+
     //  REVOKE TOKEN
 
     @Test
@@ -221,6 +269,30 @@ class RefreshTokenServiceImplTest {
         RefreshToken result = service.validateAndGetToken(raw);
 
         assertNull(result);
+    }
+
+    @Test
+    void shouldNotTriggerTheftForLogoutRevokedToken() {
+        String raw = "logoutToken";
+        String hash = RefreshTokenServiceImpl.sha256Hex(raw);
+
+        RefreshToken token = new RefreshToken();
+        token.setTokenHash(hash);
+        token.setTokenFamily(UUID.randomUUID());
+        token.setRevokedAt(OffsetDateTime.now());
+        token.setRevokeReason("LOGOUT");
+        token.setReplacedByTokenId(null); // important
+
+        when(refreshTokenRepository.findByTokenHashAndRevokedAtIsNull(hash))
+                .thenReturn(Optional.empty());
+
+        when(refreshTokenRepository.findByTokenHash(hash))
+                .thenReturn(Optional.of(token));
+
+        RefreshToken result = service.validateAndGetToken(raw);
+
+        assertNull(result);
+        verify(refreshTokenRepository, never()).saveAll(anyList()); // no family revoke
     }
 
     @Test
