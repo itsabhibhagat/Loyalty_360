@@ -112,6 +112,7 @@
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
 
+
 			<!-- Compiler Plugin for Lombok -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
