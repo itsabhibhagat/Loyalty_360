@@ -106,7 +106,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new ForbiddenException("You have no roles assigned");
         }
 
-        // 4. 🔐 VALIDATE ROLE HIERARCHY (BEFORE creating user)
+        // 4.VALIDATE ROLE HIERARCHY (BEFORE creating user)
         for (Role role : roles) {
 
             if (!canAssignRole(callerRoles, role)) {
