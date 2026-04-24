@@ -1,11 +1,10 @@
 package com.loyalty.identity_service.config;
 
 import com.nimbusds.jose.jwk.RSAKey;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.ResourceLoader;
 
 import java.io.InputStream;
 import java.security.KeyFactory;
@@ -16,30 +15,26 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
-import com.loyalty.identity_service.config.AppProperties;
 
 @Configuration
-@RequiredArgsConstructor
 public class RsaKeyConfig {
 
-    private final AppProperties appProperties;
-    private final ResourceLoader resourceLoader;
+    @Value("${app.jwt.private-key-path:#{null}}")
+    private Resource privateKeyResource;
 
+    @Value("${app.jwt.public-key-path:#{null}}")
+    private Resource publicKeyResource;
+
+    @Value("${app.jwt.key-id:key-2026-04}")
+    private String keyId;
 
     @Bean
     public KeyPair rsaKeyPair() throws Exception {
-        String privatePath = appProperties.getJwt().getPrivateKeyPath();
-        String publicPath = appProperties.getJwt().getPublicKeyPath();
-
-        if (privatePath != null && publicPath != null) {
-            Resource privateKeyResource = resourceLoader.getResource(privatePath);
-            Resource publicKeyResource = resourceLoader.getResource(publicPath);
-
-            if (privateKeyResource.exists() && publicKeyResource.exists()) {
-                RSAPrivateKey privateKey = readPrivateKey(privateKeyResource);
-                RSAPublicKey publicKey = readPublicKey(publicKeyResource);
-                return new KeyPair(publicKey, privateKey);
-            }
+        if (privateKeyResource != null && privateKeyResource.exists()
+                && publicKeyResource != null && publicKeyResource.exists()) {
+            RSAPrivateKey privateKey = readPrivateKey(privateKeyResource);
+            RSAPublicKey publicKey = readPublicKey(publicKeyResource);
+            return new KeyPair(publicKey, privateKey);
         }
 
         // Generate keys for development (NOT for production)
@@ -54,7 +49,7 @@ public class RsaKeyConfig {
         RSAPrivateKey privateKey = (RSAPrivateKey) rsaKeyPair.getPrivate();
         return new RSAKey.Builder(publicKey)
                 .privateKey(privateKey)
-                .keyID(appProperties.getJwt().getKeyId())
+                .keyID(keyId)
                 .build();
     }
 
