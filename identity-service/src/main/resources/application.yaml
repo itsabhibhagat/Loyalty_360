@@ -31,9 +31,9 @@ app:
     public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public.pem}
     key-id: ${JWT_KEY_ID:key-2026-04}
   security:
-    max-failed-attempts: 5
-    lock-duration-minutes: 2
-    bcrypt-strength: 12
+    max-failed-attempts: ${MAX_FAILED_ATTEMPTS:5}
+    lock-duration-minutes: ${LOCK_DURATION_MINUTES:30}
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
 
 server:
   port: 8080

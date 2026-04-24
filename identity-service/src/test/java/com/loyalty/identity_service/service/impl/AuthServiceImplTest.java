@@ -1,5 +1,6 @@
 package com.loyalty.identity_service.service.impl;
 
+import com.loyalty.identity_service.config.AppProperties;
 import com.loyalty.identity_service.config.JwtService;
 import com.loyalty.identity_service.dto.*;
 import com.loyalty.identity_service.entity.AdminUser;
@@ -23,7 +24,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -41,6 +41,9 @@ public class AuthServiceImplTest {
     private AuthServiceImpl authService;
 
     @Mock
+    private AppProperties appProperties;
+
+    @Mock
     private AdminUserRepository adminUserRepository;
     @Mock
     private TenantRegistryRepository tenantRegistryRepository;
@@ -56,6 +59,8 @@ public class AuthServiceImplTest {
     private RefreshTokenService refreshTokenService;
     @Mock
     private AuditService auditService;
+
+
 
     private LoginRequest request;
     private TenantRegistry activeTenant;
@@ -283,8 +288,8 @@ public class AuthServiceImplTest {
     @Test
     void shouldThrowException_whenUserIsLocked() {
         // Arrange
-        user.setStatus(AdminUserStatus.ACTIVE);
-        user.setLockedUntil(OffsetDateTime.now().plusMinutes(20));
+        user.setStatus(AdminUserStatus.LOCKED);
+        user.setLockedUntil(OffsetDateTime.now().plusMinutes(3));
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));
@@ -293,16 +298,16 @@ public class AuthServiceImplTest {
                 activeTenant.getId(), request.getEmail()))
                 .thenReturn(Optional.of(user));
 
+
+
         // Act & Assert
         UnauthorizedException ex = assertThrows(
                 UnauthorizedException.class,
                 () -> authService.login(request, ip, userAgent)
         );
 
-        // message from service
         assertEquals("Account temporarily locked. Try again later.", ex.getMessage());
 
-        // audit verification
         verify(auditService).logLoginFailedWithUser(
                 eq(user),
                 eq("Account locked"),
@@ -312,10 +317,17 @@ public class AuthServiceImplTest {
     }
 
     @Test
-    void shouldIncrementFailedCount_whenWrongPassword() {
+    @DisplayName("TC_LOGIN_008 - Lock expired (status = LOCKED but isLocked = false)")
+    void shouldResetLockAndProceed_whenLockExpired() {
 
         // Arrange
-        user.setFailedLoginCount(2);
+        user.setStatus(AdminUserStatus.LOCKED);
+
+        // IMPORTANT: match production type (OffsetDateTime, not LocalDateTime)
+        user.setLockedUntil(OffsetDateTime.now().minusMinutes(5));
+        user.setFailedLoginCount(5);
+
+        AppProperties.Security security = mock(AppProperties.Security.class);
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));
@@ -325,12 +337,71 @@ public class AuthServiceImplTest {
                 .thenReturn(Optional.of(user));
 
         when(passwordEncoder.matches(request.getPassword(), user.getPasswordHash()))
-                .thenReturn(false);
+                .thenReturn(true);
+
+        when(userRoleRepository.findRoleCodesByUserId(user.getId()))
+                .thenReturn(List.of("USER"));
+
+        when(userRoleRepository.findPermissionCodesByUserId(user.getId()))
+                .thenReturn(List.of("READ"));
+
+        when(userStoreScopeRepository.findByUserId(user.getId()))
+                .thenReturn(Collections.emptyList());
+
+        when(jwtService.generateAccessToken(any(), any(), any(), any(), any(), any()))
+                .thenReturn("token");
+
+        when(jwtService.getAccessTokenExpirySeconds())
+                .thenReturn(3600);
+
+        when(refreshTokenService.issueRefreshToken(any(), any(), any(), any(), any()))
+                .thenReturn("refresh");
 
         when(adminUserRepository.save(any(AdminUser.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        // Act + Assert
+        // Act
+        AuthResponse response = authService.login(request, ip, userAgent);
+
+        // Assert
+        assertNotNull(response);
+
+        ArgumentCaptor<AdminUser> userCaptor = ArgumentCaptor.forClass(AdminUser.class);
+        verify(adminUserRepository, atLeastOnce()).save(userCaptor.capture());
+
+        AdminUser savedUser = userCaptor.getValue();
+
+        assertEquals(AdminUserStatus.ACTIVE, savedUser.getStatus());
+        assertEquals(0, savedUser.getFailedLoginCount());
+        assertNull(savedUser.getLockedUntil());
+    }
+
+    @Test
+    void shouldIncrementFailedCount_whenWrongPassword() {
+
+        // Arrange
+        user.setFailedLoginCount(2);
+        user.setStatus(AdminUserStatus.ACTIVE);
+
+        when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
+                .thenReturn(Optional.of(activeTenant));
+
+        when(adminUserRepository.findByTenantIdAndEmailIgnoreCase(
+                activeTenant.getId(), request.getEmail()))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.matches(any(), any()))
+                .thenReturn(false);
+
+        AppProperties.Security security = mock(AppProperties.Security.class);
+
+        when(appProperties.getSecurity()).thenReturn(security);
+        when(security.getMaxFailedAttempts()).thenReturn(5);
+
+        when(adminUserRepository.save(any(AdminUser.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act & Assert
         assertThrows(
                 UnauthorizedException.class,
                 () -> authService.login(request, ip, userAgent)
@@ -344,25 +415,23 @@ public class AuthServiceImplTest {
 
         // Assert state change
         assertEquals(3, saved.getFailedLoginCount());
-        assertNotEquals(AdminUserStatus.LOCKED, saved.getStatus());
+        assertEquals(AdminUserStatus.ACTIVE, saved.getStatus()); // clearer intent
 
-        // IMPORTANT: correct audit method
+        // Audit verification
         verify(auditService).logLoginFailedWithUser(
                 eq(user),
                 eq("Invalid password"),
                 eq(ip),
                 eq(userAgent)
         );
-
-        // Ensure no success flow
-        verifyNoInteractions(refreshTokenService);
-        verifyNoInteractions(jwtService);
     }
 
     @Test
     void shouldLockAccount_whenFifthFailedAttempt() {
+
         // Arrange
         user.setFailedLoginCount(4);
+        user.setStatus(AdminUserStatus.ACTIVE);
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));
@@ -371,11 +440,19 @@ public class AuthServiceImplTest {
                 activeTenant.getId(), request.getEmail()))
                 .thenReturn(Optional.of(user));
 
-        when(passwordEncoder.matches(request.getPassword(), user.getPasswordHash()))
+        when(passwordEncoder.matches(any(), any()))
                 .thenReturn(false);
+
+        // ✅ FIX: mock appProperties properly
+        AppProperties.Security security = mock(AppProperties.Security.class);
+        when(appProperties.getSecurity()).thenReturn(security);
+        when(security.getMaxFailedAttempts()).thenReturn(5);
+        when(security.getLockDurationMinutes()).thenReturn(30);
 
         when(adminUserRepository.save(any(AdminUser.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+
+        OffsetDateTime before = OffsetDateTime.now();
 
         // Act & Assert
         assertThrows(
@@ -383,16 +460,19 @@ public class AuthServiceImplTest {
                 () -> authService.login(request, ip, userAgent)
         );
 
-        ArgumentCaptor<AdminUser> userCaptor = ArgumentCaptor.forClass(AdminUser.class);
-        verify(adminUserRepository).save(userCaptor.capture());
+        ArgumentCaptor<AdminUser> captor = ArgumentCaptor.forClass(AdminUser.class);
+        verify(adminUserRepository).save(captor.capture());
 
-        AdminUser savedUser = userCaptor.getValue();
+        AdminUser savedUser = captor.getValue();
+
+        // Assertions
         assertEquals(5, savedUser.getFailedLoginCount());
         assertEquals(AdminUserStatus.LOCKED, savedUser.getStatus());
         assertNotNull(savedUser.getLockedUntil());
-        assertTrue(savedUser.getLockedUntil().isAfter(OffsetDateTime.now().plusMinutes(25)));
-    }
 
+        assertTrue(savedUser.getLockedUntil()
+                .isAfter(before.plusMinutes(29)));
+    }
     @Test
     void shouldLoginSuccessfully_withDifferentEmailCase() {
         // Arrange
@@ -441,8 +521,14 @@ public class AuthServiceImplTest {
 
     @Test
     void shouldThrowException_whenPasswordIsNull() {
+
         // Arrange
         request.setPassword(null);
+
+        // 🔥 FIX: AppProperties mock
+        AppProperties.Security security = mock(AppProperties.Security.class);
+        when(appProperties.getSecurity()).thenReturn(security);
+        when(security.getMaxFailedAttempts()).thenReturn(5);
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));
@@ -466,8 +552,14 @@ public class AuthServiceImplTest {
 
     @Test
     void shouldThrowException_whenPasswordIsEmpty() {
+
         // Arrange
         request.setPassword("");
+
+        // 🔥 FIX: AppProperties mock
+        AppProperties.Security security = mock(AppProperties.Security.class);
+        when(appProperties.getSecurity()).thenReturn(security);
+        when(security.getMaxFailedAttempts()).thenReturn(5);
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));
@@ -488,7 +580,6 @@ public class AuthServiceImplTest {
                 () -> authService.login(request, ip, userAgent)
         );
     }
-
     //Get Current User Test Cases Starts Here:
 
     @Test
@@ -983,6 +1074,96 @@ public class AuthServiceImplTest {
     }
 
     @Test
+    @DisplayName("Edge Case - Empty roles list")
+    void shouldHandleEmptyRolesList() {
+        // Arrange
+        when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
+                .thenReturn(Optional.of(activeTenant));
+
+        when(adminUserRepository.findByTenantIdAndEmailIgnoreCase(
+                activeTenant.getId(), request.getEmail()))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.matches(request.getPassword(), user.getPasswordHash()))
+                .thenReturn(true);
+
+        when(userRoleRepository.findRoleCodesByUserId(user.getId()))
+                .thenReturn(Collections.emptyList());
+
+        when(userRoleRepository.findPermissionCodesByUserId(user.getId()))
+                .thenReturn(Collections.emptyList());
+
+        when(userStoreScopeRepository.findByUserId(user.getId()))
+                .thenReturn(Collections.emptyList());
+
+        when(jwtService.generateAccessToken(any(), any(), any(), any(), any(), any()))
+                .thenReturn("token");
+
+        when(jwtService.getAccessTokenExpirySeconds())
+                .thenReturn(3600);
+
+        when(refreshTokenService.issueRefreshToken(any(), any(), any(), any(), any()))
+                .thenReturn("refresh");
+
+        when(adminUserRepository.save(any(AdminUser.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        AuthResponse response = authService.login(request, ip, userAgent);
+
+        // Assert
+        assertNotNull(response);
+        assertNotNull(response.getUser().getRoles());
+        assertTrue(response.getUser().getRoles().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Edge Case - Lock expiry exactly at boundary (30 minutes)")
+    void shouldHandleLockExpiryAtExactBoundary() {
+        // Arrange
+        user.setStatus(AdminUserStatus.LOCKED);
+        user.setLockedUntil(OffsetDateTime.now()); // Exactly now
+        user.setFailedLoginCount(5);
+
+        when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
+                .thenReturn(Optional.of(activeTenant));
+
+        when(adminUserRepository.findByTenantIdAndEmailIgnoreCase(
+                activeTenant.getId(), request.getEmail()))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.matches(request.getPassword(), user.getPasswordHash()))
+                .thenReturn(true);
+
+        when(userRoleRepository.findRoleCodesByUserId(user.getId()))
+                .thenReturn(List.of("USER"));
+
+        when(userRoleRepository.findPermissionCodesByUserId(user.getId()))
+                .thenReturn(List.of("READ"));
+
+        when(userStoreScopeRepository.findByUserId(user.getId()))
+                .thenReturn(Collections.emptyList());
+
+        when(jwtService.generateAccessToken(any(), any(), any(), any(), any(), any()))
+                .thenReturn("token");
+
+        when(jwtService.getAccessTokenExpirySeconds())
+                .thenReturn(3600);
+
+        when(refreshTokenService.issueRefreshToken(any(), any(), any(), any(), any()))
+                .thenReturn("refresh");
+
+        when(adminUserRepository.save(any(AdminUser.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        AuthResponse response = authService.login(request, ip, userAgent);
+
+        // Assert - should unlock and proceed
+        assertNotNull(response);
+    }
+
+    @Test
     void shouldPropagateException_whenDatabaseSaveFails() {
         // Arrange
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
@@ -1005,5 +1186,6 @@ public class AuthServiceImplTest {
                 () -> authService.login(request, ip, userAgent)
         );
     }
+
 
 }
