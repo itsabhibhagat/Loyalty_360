@@ -23,6 +23,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
 import java.util.Collections;
@@ -393,10 +394,9 @@ public class AuthServiceImplTest {
         when(passwordEncoder.matches(any(), any()))
                 .thenReturn(false);
 
-        AppProperties.Security security = mock(AppProperties.Security.class);
-
-        when(appProperties.getSecurity()).thenReturn(security);
-        when(security.getMaxFailedAttempts()).thenReturn(5);
+        // IMPORTANT: set actual field used in service
+        ReflectionTestUtils.setField(authService, "maxFailedAttempts", 5);
+        ReflectionTestUtils.setField(authService, "lockDurationMinutes", 15);
 
         when(adminUserRepository.save(any(AdminUser.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -413,11 +413,10 @@ public class AuthServiceImplTest {
 
         AdminUser saved = captor.getValue();
 
-        // Assert state change
         assertEquals(3, saved.getFailedLoginCount());
-        assertEquals(AdminUserStatus.ACTIVE, saved.getStatus()); // clearer intent
+        assertEquals(AdminUserStatus.ACTIVE, saved.getStatus());
 
-        // Audit verification
+
         verify(auditService).logLoginFailedWithUser(
                 eq(user),
                 eq("Invalid password"),
@@ -443,11 +442,9 @@ public class AuthServiceImplTest {
         when(passwordEncoder.matches(any(), any()))
                 .thenReturn(false);
 
-        // ✅ FIX: mock appProperties properly
-        AppProperties.Security security = mock(AppProperties.Security.class);
-        when(appProperties.getSecurity()).thenReturn(security);
-        when(security.getMaxFailedAttempts()).thenReturn(5);
-        when(security.getLockDurationMinutes()).thenReturn(30);
+
+        ReflectionTestUtils.setField(authService, "maxFailedAttempts", 5);
+        ReflectionTestUtils.setField(authService, "lockDurationMinutes", 30);
 
         when(adminUserRepository.save(any(AdminUser.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -470,6 +467,7 @@ public class AuthServiceImplTest {
         assertEquals(AdminUserStatus.LOCKED, savedUser.getStatus());
         assertNotNull(savedUser.getLockedUntil());
 
+        // Slightly safer timing assertion
         assertTrue(savedUser.getLockedUntil()
                 .isAfter(before.plusMinutes(29)));
     }
@@ -525,10 +523,7 @@ public class AuthServiceImplTest {
         // Arrange
         request.setPassword(null);
 
-        // 🔥 FIX: AppProperties mock
-        AppProperties.Security security = mock(AppProperties.Security.class);
-        when(appProperties.getSecurity()).thenReturn(security);
-        when(security.getMaxFailedAttempts()).thenReturn(5);
+
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));
@@ -556,10 +551,7 @@ public class AuthServiceImplTest {
         // Arrange
         request.setPassword("");
 
-        // 🔥 FIX: AppProperties mock
-        AppProperties.Security security = mock(AppProperties.Security.class);
-        when(appProperties.getSecurity()).thenReturn(security);
-        when(security.getMaxFailedAttempts()).thenReturn(5);
+
 
         when(tenantRegistryRepository.findBySlug(request.getTenantSlug()))
                 .thenReturn(Optional.of(activeTenant));

@@ -46,8 +46,7 @@ class RefreshTokenServiceImplTest {
     @Test
     void shouldIssueTokenAndSaveInDb() {
         UUID family = UUID.randomUUID();
-        AppProperties.Jwt jwt = mock(AppProperties.Jwt.class);
-        when(appProperties.getJwt()).thenReturn(jwt);
+
         String rawToken = service.issueRefreshToken(
                 user, tenant, family, "127.0.0.1", "JUnit"
         );
@@ -71,8 +70,6 @@ class RefreshTokenServiceImplTest {
     //Token Uniqueness
     @Test
     void shouldGenerateUniqueTokensEachTime() {
-        AppProperties.Jwt jwt = mock(AppProperties.Jwt.class);
-        when(appProperties.getJwt()).thenReturn(jwt);
         when(refreshTokenRepository.save(any()))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -87,8 +84,7 @@ class RefreshTokenServiceImplTest {
     void shouldStoreHashedTokenNotRaw() {
         ArgumentCaptor<RefreshToken> captor =
                 ArgumentCaptor.forClass(RefreshToken.class);
-        AppProperties.Jwt jwt = mock(AppProperties.Jwt.class);
-        when(appProperties.getJwt()).thenReturn(jwt);
+
         when(refreshTokenRepository.save(captor.capture()))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -193,8 +189,6 @@ class RefreshTokenServiceImplTest {
         RefreshToken newToken = new RefreshToken();
         newToken.setId(UUID.randomUUID());
 
-        AppProperties.Jwt jwt = mock(AppProperties.Jwt.class);
-        when(appProperties.getJwt()).thenReturn(jwt);
         when(refreshTokenRepository.findByTokenHash(any()))
                 .thenReturn(Optional.of(newToken));
 
@@ -217,10 +211,6 @@ class RefreshTokenServiceImplTest {
         RefreshToken oldToken = new RefreshToken();
         oldToken.setTokenFamily(family);
 
-
-        AppProperties.Jwt jwt = mock(AppProperties.Jwt.class);
-        when(appProperties.getJwt()).thenReturn(jwt);
-        when(jwt.getRefreshTokenExpiryDays()).thenReturn(7);
 
         // Optional (if other tests use security too)
         AppProperties.Security security = new AppProperties.Security();
