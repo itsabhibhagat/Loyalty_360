@@ -1,5 +1,6 @@
 package com.loyalty.identity_service.service.impl;
 
+import com.loyalty.identity_service.config.AppProperties;
 import com.loyalty.identity_service.entity.AdminUser;
 import com.loyalty.identity_service.entity.RefreshToken;
 import com.loyalty.identity_service.entity.TenantRegistry;
@@ -22,6 +23,8 @@ class RefreshTokenServiceImplTest {
 
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
+    @Mock
+    private AppProperties appProperties;
 
     @InjectMocks
     private RefreshTokenServiceImpl service;
@@ -201,25 +204,45 @@ class RefreshTokenServiceImplTest {
 
     @Test
     void shouldKeepSameTokenFamilyOnRotation() {
-        ArgumentCaptor<RefreshToken> captor =
-                ArgumentCaptor.forClass(RefreshToken.class);
 
-        when(refreshTokenRepository.save(captor.capture()))
-                .thenAnswer(inv -> inv.getArgument(0));
-
-        when(refreshTokenRepository.findByTokenHash(any()))
-                .thenReturn(Optional.of(new RefreshToken()));
-
+        // Arrange
         UUID family = UUID.randomUUID();
 
         RefreshToken oldToken = new RefreshToken();
         oldToken.setTokenFamily(family);
 
-        service.rotateToken(oldToken, user, tenant, "ip", "agent");
 
-        RefreshToken newToken = captor.getAllValues().get(0);
+        // Optional (if other tests use security too)
+        AppProperties.Security security = new AppProperties.Security();
 
-        assertEquals(family, newToken.getTokenFamily());
+
+        // Mock save correctly
+        when(refreshTokenRepository.save(any(RefreshToken.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        // Existing token in DB
+        RefreshToken dbToken = new RefreshToken();
+        dbToken.setId(UUID.randomUUID());
+        dbToken.setTokenFamily(family);
+        dbToken.setTokenHash("old-hash");
+
+        when(refreshTokenRepository.findByTokenHash(any()))
+                .thenReturn(Optional.of(dbToken));
+
+        // Capture save for verification
+        ArgumentCaptor<RefreshToken> captor =
+                ArgumentCaptor.forClass(RefreshToken.class);
+
+        // Act
+        String newToken = service.rotateToken(oldToken, user, tenant, "ip", "agent");
+
+        // Assert
+        verify(refreshTokenRepository, atLeastOnce()).save(captor.capture());
+
+        RefreshToken saved = captor.getAllValues().get(0);
+
+        assertNotNull(newToken);
+        assertEquals(family, saved.getTokenFamily());
     }
 
     //Ignore Unknown token

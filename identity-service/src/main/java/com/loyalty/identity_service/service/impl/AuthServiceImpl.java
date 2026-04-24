@@ -48,7 +48,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional(noRollbackFor = {
-            com.loyalty.identity_service.exception.UnauthorizedException.class
+            UnauthorizedException.class
     })
     public AuthResponse login(LoginRequest request, String ipAddress, String userAgent)  {
         // Step 1-3: Lookup tenant
@@ -58,7 +58,7 @@ public class AuthServiceImpl implements AuthService {
 
         if (tenant == null) {
             auditService.logLoginFailed(null, request.getEmail(), "Tenant not found or inactive", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Step 4-5: Lookup user
@@ -67,13 +67,13 @@ public class AuthServiceImpl implements AuthService {
 
         if (user == null) {
             auditService.logLoginFailed(tenant.getId(), request.getEmail(), "User not found", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Step 6: Check status and lockout
         if (user.getStatus() == AdminUserStatus.DISABLED || user.getStatus() == AdminUserStatus.DELETED) {
             auditService.logLoginFailedWithUser(user, "Account disabled", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Block if actively locked
@@ -99,7 +99,7 @@ public class AuthServiceImpl implements AuthService {
             }
             adminUserRepository.save(user);
             auditService.logLoginFailedWithUser(user, "Invalid password", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         // Step 8: Success
@@ -120,15 +120,15 @@ public class AuthServiceImpl implements AuthService {
 
         // Step 4: Load from DB to get fresh permissions
         AdminUser user = adminUserRepository.findById(userId)
-                .orElseThrow(() -> new com.loyalty.identity_service.exception.UnauthorizedException("User not found"));
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
 
         if (!user.isActive()) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("User account is not active");
+            throw new UnauthorizedException("User account is not active");
         }
 
         TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
                 .orElseThrow(
-                        () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
+                        () -> new UnauthorizedException("Tenant not found"));
 
         return buildUserResponse(user, tenant);
     }
@@ -139,17 +139,17 @@ public class AuthServiceImpl implements AuthService {
         RefreshToken token = refreshTokenService.validateAndGetToken(request.getRefreshToken());
 
         if (token == null) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid or expired refresh token");
+            throw new UnauthorizedException("Invalid or expired refresh token");
         }
 
         AdminUser user = token.getUser();
         if (!user.isActive()) {
-            throw new com.loyalty.identity_service.exception.UnauthorizedException("User account is not active");
+            throw new UnauthorizedException("User account is not active");
         }
 
         TenantRegistry tenant = tenantRegistryRepository.findById(user.getTenantId())
                 .orElseThrow(
-                        () -> new com.loyalty.identity_service.exception.UnauthorizedException("Tenant not found"));
+                        () -> new UnauthorizedException("Tenant not found"));
 
         String newRefreshToken = refreshTokenService.rotateToken(token, user, tenant, ipAddress, userAgent);
 
