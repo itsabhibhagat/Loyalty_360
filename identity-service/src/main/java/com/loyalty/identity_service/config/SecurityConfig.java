@@ -1,5 +1,6 @@
 package com.loyalty.identity_service.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -17,6 +18,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final GatewayTrustFilter gatewayTrustFilter;
+
+    @Value("${app.security.bcrypt-strength}")
+    private int bcryptStrength;
 
     public SecurityConfig(GatewayTrustFilter gatewayTrustFilter) {
         this.gatewayTrustFilter = gatewayTrustFilter;
@@ -43,7 +47,6 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        // Spec requires cost factor 12
-        return new BCryptPasswordEncoder(12);
+        return new BCryptPasswordEncoder(bcryptStrength);
     }
 }

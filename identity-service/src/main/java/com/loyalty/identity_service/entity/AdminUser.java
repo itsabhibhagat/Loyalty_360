@@ -177,11 +177,9 @@ public class AdminUser {
      */
 
     public boolean isLocked() {
-
         return AdminUserStatus.LOCKED == this.status
-
-                || (lockedUntil != null && OffsetDateTime.now().isBefore(lockedUntil));
-
+                && lockedUntil != null
+                && OffsetDateTime.now().isBefore(lockedUntil); // AND, not OR
     }
 
 }
