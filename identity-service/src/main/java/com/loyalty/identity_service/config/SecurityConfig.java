@@ -17,9 +17,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final GatewayTrustFilter gatewayTrustFilter;
+    private final AppProperties appProperties;
 
-    public SecurityConfig(GatewayTrustFilter gatewayTrustFilter) {
+    public SecurityConfig(GatewayTrustFilter gatewayTrustFilter, AppProperties appProperties) {
         this.gatewayTrustFilter = gatewayTrustFilter;
+        this.appProperties = appProperties;
     }
 
     @Bean
@@ -44,6 +46,6 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         // Spec requires cost factor 12
-        return new BCryptPasswordEncoder(12);
+        return new BCryptPasswordEncoder(appProperties.getSecurity().getBcryptStrength());
     }
 }
