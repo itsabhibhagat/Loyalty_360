@@ -6,6 +6,7 @@ import com.loyalty.identity_service.entity.AdminUser;
 import com.loyalty.identity_service.entity.AdminUserStatus;
 import com.loyalty.identity_service.entity.RefreshToken;
 import com.loyalty.identity_service.entity.TenantRegistry;
+import com.loyalty.identity_service.exception.UnauthorizedException;
 import com.loyalty.identity_service.repository.AdminUserRepository;
 import com.loyalty.identity_service.repository.TenantRegistryRepository;
 import com.loyalty.identity_service.repository.UserRoleRepository;
@@ -15,6 +16,7 @@ import com.loyalty.identity_service.service.AuthService;
 import com.loyalty.identity_service.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,8 +40,16 @@ public class AuthServiceImpl implements AuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuditService auditService;
 
+    @Value("${app.security.max-failed-attempts:5}")
+    private int maxFailedAttempts;
+
+    @Value("${app.security.lock-duration-minutes:30}")
+    private int lockDurationMinutes;
+
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = {
+            com.loyalty.identity_service.exception.UnauthorizedException.class
+    })
     public AuthResponse login(LoginRequest request, String ipAddress, String userAgent)  {
         // Step 1-3: Lookup tenant
         TenantRegistry tenant = tenantRegistryRepository.findBySlug(request.getTenantSlug())
@@ -66,23 +76,26 @@ public class AuthServiceImpl implements AuthService {
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
         }
 
+        // Block if actively locked
         if (user.isLocked()) {
             auditService.logLoginFailedWithUser(user, "Account locked", ipAddress, userAgent);
-            throw new com.loyalty.identity_service.exception.UnauthorizedException(
-                    "Account temporarily locked. Try again later.");
-        } else if (user.getStatus() == AdminUserStatus.LOCKED) {
-            // Lock expired
+            throw new UnauthorizedException("Account temporarily locked. Try again later.");
+        }
+
+// Unlock if lock window has expired
+        if (user.getStatus() == AdminUserStatus.LOCKED) {
             user.setStatus(AdminUserStatus.ACTIVE);
             user.setFailedLoginCount(0);
+            // don't save here — it'll be saved after password check below
         }
 
         // Step 7: Verify password
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             int failures = user.getFailedLoginCount() + 1;
             user.setFailedLoginCount(failures);
-            if (failures >= 5) {
+            if (failures >= maxFailedAttempts) {
                 user.setStatus(AdminUserStatus.LOCKED);
-                user.setLockedUntil(OffsetDateTime.now().plusMinutes(30));
+                user.setLockedUntil(OffsetDateTime.now().plusMinutes(lockDurationMinutes));
             }
             adminUserRepository.save(user);
             auditService.logLoginFailedWithUser(user, "Invalid password", ipAddress, userAgent);

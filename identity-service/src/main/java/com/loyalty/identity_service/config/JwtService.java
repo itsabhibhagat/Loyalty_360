@@ -34,7 +34,7 @@ public class JwtService {
     @Value("${app.jwt.audience:admin}")
     private String audience;
 
-    @Value("${app.jwt.access-token-expiry-minutes:15}")
+    @Value("${app.jwt.access-token-expiry-minutes}")
     private int accessTokenExpiryMinutes;
 
     /**

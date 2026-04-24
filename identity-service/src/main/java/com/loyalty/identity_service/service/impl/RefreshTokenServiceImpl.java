@@ -27,7 +27,7 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
     private final RefreshTokenRepository refreshTokenRepository;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    @Value("${app.jwt.refresh-token-expiry-days:14}")
+    @Value("${app.jwt.refresh-token-expiry-days}")
     private int refreshTokenExpiryDays;
 
     /**
