@@ -1,6 +1,5 @@
 package com.loyalty.identity_service.service.impl;
 
-import com.loyalty.identity_service.config.AppProperties;
 import com.loyalty.identity_service.entity.AdminUser;
 import com.loyalty.identity_service.entity.RefreshToken;
 import com.loyalty.identity_service.entity.TenantRegistry;
@@ -8,8 +7,10 @@ import com.loyalty.identity_service.repository.RefreshTokenRepository;
 import com.loyalty.identity_service.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -24,8 +25,10 @@ import java.util.UUID;
 public class RefreshTokenServiceImpl implements RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
-    private final AppProperties appProperties;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    @Value("${app.jwt.refresh-token-expiry-days:14}")
+    private int refreshTokenExpiryDays;
 
     /**
      * Generate and store a new refresh token for the given user.
@@ -43,17 +46,15 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
         // Hash with SHA-256 for storage
         String tokenHash = sha256Hex(rawToken);
 
-    RefreshToken refreshToken =
-        RefreshToken.builder()
-            .user(user)
-            .tenantId(tenant.getId())
-            .tokenHash(tokenHash)
-            .tokenFamily(tokenFamily)
-            .expiresAt(
-                OffsetDateTime.now().plusDays(appProperties.getJwt().getRefreshTokenExpiryDays()))
-            .ipAddress(ipAddress)
-            .userAgent(userAgent)
-            .build();
+        RefreshToken refreshToken = RefreshToken.builder()
+                .user(user)
+                .tenantId(tenant.getId())
+                .tokenHash(tokenHash)
+                .tokenFamily(tokenFamily)
+                .expiresAt(OffsetDateTime.now().plusDays(refreshTokenExpiryDays))
+                .ipAddress(ipAddress)
+                .userAgent(userAgent)
+                .build();
 
         refreshTokenRepository.save(refreshToken);
 

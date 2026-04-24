@@ -1,13 +1,11 @@
 package com.loyalty.identity_service.service.impl;
 
 import com.loyalty.identity_service.config.JwtService;
-import com.loyalty.identity_service.config.AppProperties;
 import com.loyalty.identity_service.dto.*;
 import com.loyalty.identity_service.entity.AdminUser;
 import com.loyalty.identity_service.entity.AdminUserStatus;
 import com.loyalty.identity_service.entity.RefreshToken;
 import com.loyalty.identity_service.entity.TenantRegistry;
-import com.loyalty.identity_service.exception.UnauthorizedException;
 import com.loyalty.identity_service.repository.AdminUserRepository;
 import com.loyalty.identity_service.repository.TenantRegistryRepository;
 import com.loyalty.identity_service.repository.UserRoleRepository;
@@ -39,12 +37,9 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final AuditService auditService;
-    private final AppProperties appProperties;
 
     @Override
-    @Transactional(noRollbackFor = {
-            com.loyalty.identity_service.exception.UnauthorizedException.class
-    })
+    @Transactional
     public AuthResponse login(LoginRequest request, String ipAddress, String userAgent)  {
         // Step 1-3: Lookup tenant
         TenantRegistry tenant = tenantRegistryRepository.findBySlug(request.getTenantSlug())
@@ -71,26 +66,23 @@ public class AuthServiceImpl implements AuthService {
             throw new com.loyalty.identity_service.exception.UnauthorizedException("Invalid credentials");
         }
 
-        // Block if actively locked
         if (user.isLocked()) {
             auditService.logLoginFailedWithUser(user, "Account locked", ipAddress, userAgent);
-            throw new UnauthorizedException("Account temporarily locked. Try again later.");
-        }
-
-// Unlock if lock window has expired
-        if (user.getStatus() == AdminUserStatus.LOCKED) {
+            throw new com.loyalty.identity_service.exception.UnauthorizedException(
+                    "Account temporarily locked. Try again later.");
+        } else if (user.getStatus() == AdminUserStatus.LOCKED) {
+            // Lock expired
             user.setStatus(AdminUserStatus.ACTIVE);
             user.setFailedLoginCount(0);
-            // don't save here — it'll be saved after password check below
         }
 
         // Step 7: Verify password
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             int failures = user.getFailedLoginCount() + 1;
             user.setFailedLoginCount(failures);
-            if (failures >= appProperties.getSecurity().getMaxFailedAttempts()) {
+            if (failures >= 5) {
                 user.setStatus(AdminUserStatus.LOCKED);
-                user.setLockedUntil(OffsetDateTime.now().plusMinutes(appProperties.getSecurity().getLockDurationMinutes()));
+                user.setLockedUntil(OffsetDateTime.now().plusMinutes(30));
             }
             adminUserRepository.save(user);
             auditService.logLoginFailedWithUser(user, "Invalid password", ipAddress, userAgent);

@@ -21,19 +21,5 @@ spring:
     enabled: true
     locations: classpath:migration
 
-app:
-  jwt:
-    issuer: https://auth.loyalty360.io
-    audience: admin
-    access-token-expiry-minutes: 15
-    refresh-token-expiry-days: 14
-    private-key-path: ${JWT_PRIVATE_KEY_PATH:classpath:keys/private.pem}
-    public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public.pem}
-    key-id: ${JWT_KEY_ID:key-2026-04}
-  security:
-    max-failed-attempts: 5
-    lock-duration-minutes: 3
-    bcrypt-strength: 12
-
 server:
   port: 8080

@@ -27,7 +27,15 @@ import java.util.UUID;
 public class JwtService {
 
     private final RSAKey rsaJwk;
-    private final AppProperties appProperties;
+
+    @Value("${app.jwt.issuer:https://auth.loyalty360.io}")
+    private String issuer;
+
+    @Value("${app.jwt.audience:admin}")
+    private String audience;
+
+    @Value("${app.jwt.access-token-expiry-minutes:15}")
+    private int accessTokenExpiryMinutes;
 
     /**
      * Generate an RS256-signed JWT access token with all spec claims.
@@ -37,11 +45,11 @@ public class JwtService {
             List<UUID> brandScope, List<UUID> storeScope) {
         try {
             Instant now = Instant.now();
-            Instant exp = now.plus(Duration.ofMinutes(appProperties.getJwt().getAccessTokenExpiryMinutes()));
+            Instant exp = now.plus(Duration.ofMinutes(accessTokenExpiryMinutes));
 
             JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                    .issuer(appProperties.getJwt().getIssuer())
-                    .audience(appProperties.getJwt().getAudience())
+                    .issuer(issuer)
+                    .audience(audience)
                     .subject(user.getId().toString())
                     .issueTime(Date.from(now))
                     .expirationTime(Date.from(exp))
@@ -92,7 +100,7 @@ public class JwtService {
             }
 
             // Check issuer
-            if (!appProperties.getJwt().getIssuer().equals(claims.getIssuer())) {
+            if (!issuer.equals(claims.getIssuer())) {
                 throw new RuntimeException("Invalid JWT issuer");
             }
 
@@ -119,6 +127,6 @@ public class JwtService {
     }
 
     public int getAccessTokenExpirySeconds() {
-        return appProperties.getJwt().getAccessTokenExpiryMinutes() * 60;
+        return accessTokenExpiryMinutes * 60;
     }
 }
