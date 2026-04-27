@@ -63,4 +63,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred"));
     }
+    @ExceptionHandler(org.springframework.web.bind.MissingRequestHeaderException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingHeader(
+            org.springframework.web.bind.MissingRequestHeaderException ex) {
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(
+                        "MISSING_HEADER",
+                        ex.getHeaderName() + " header is required"
+                ));
+    }
+
 }
